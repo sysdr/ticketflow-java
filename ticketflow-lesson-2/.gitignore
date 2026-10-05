@@ -1,0 +1,38 @@
+# Build
+target/
+out/
+build/
+dist/
+*.jar
+*.war
+*.class
+
+# Local Maven / Docker CLI caches (never push)
+.m2/
+.docker-config/
+
+# Logs / temp
+*.log
+*.tmp
+*~
+*.swp
+*.swo
+
+# IDE / OS
+.idea/
+.vscode/
+.settings/
+.classpath
+.project
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets / local env (never push)
+.env
+.env.*
+*.pem
+*.p12
+*.jks
+credentials*
+*secrets*

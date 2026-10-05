@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Lesson 2 · Domain model</title>
+<style>
+  :root {
+    --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb;
+    --blue: #dbeafe; --blue-d: #3b82f6;
+    --green: #dcfce7; --green-d: #16a34a;
+    --orange: #ffedd5; --orange-d: #ea580c;
+    --red: #fee2e2; --red-d: #dc2626;
+    --shadow: 0 2px 6px rgba(31,41,55,.12);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 15px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 18px 28px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 20px; }
+  header span { color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(380px, 1fr); gap: 24px; padding: 24px 28px; }
+  @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+  section { background: #fff; border-radius: 14px; box-shadow: var(--shadow); padding: 18px 20px; }
+  h2 { margin: 0 0 12px; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .stage { text-align: center; background: var(--blue); border-radius: 10px 10px 40px 40px; padding: 8px; margin: 0 auto 16px; max-width: 80%; font-weight: 600; color: #1e3a8a; box-shadow: var(--shadow); }
+  .row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; justify-content: center; }
+  .row b { width: 18px; color: var(--muted); font-weight: 600; text-align: center; }
+  .seat { width: 38px; height: 38px; border: 0; border-radius: 9px; font-size: 11px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); color: var(--ink); transition: transform .08s; }
+  .seat:hover:not(:disabled) { transform: translateY(-2px); }
+  .seat.AVAILABLE { background: var(--green); }
+  .seat.HELD { background: var(--orange); cursor: default; }
+  .seat.BOOKED { background: var(--blue); cursor: default; color: #1e3a8a; }
+  .seat.just { outline: 3px solid var(--blue-d); }
+  .legend { display: flex; gap: 16px; justify-content: center; margin-top: 12px; color: var(--muted); font-size: 13px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 6px; vertical-align: -1px; box-shadow: var(--shadow); }
+  .counts { display: flex; gap: 10px; margin-bottom: 14px; }
+  .count { flex: 1; border-radius: 10px; padding: 8px 10px; text-align: center; box-shadow: var(--shadow); }
+  .count strong { display: block; font-size: 22px; }
+  .count small { color: var(--muted); }
+  .c-AVAILABLE { background: var(--green); } .c-HELD { background: var(--orange); } .c-BOOKED { background: var(--blue); }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  input[type=text] { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; font: inherit; width: 140px; }
+  button.btn { padding: 8px 12px; border: 0; border-radius: 8px; font: inherit; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); background: var(--blue); color: #1e3a8a; }
+  button.btn.go { background: var(--green); color: #14532d; }
+  button.btn.warn { background: var(--orange); color: #7c2d12; }
+  .hold { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: var(--orange); margin-bottom: 8px; box-shadow: var(--shadow); }
+  .hold .grow { flex: 1; }
+  .hold small { color: #7c2d12; }
+  .ok { color: var(--green-d); font-weight: 600; } .bad { color: var(--red-d); font-weight: 600; }
+  #trace { height: 330px; overflow: auto; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+  .ev { padding: 1px 6px; border-radius: 6px; white-space: nowrap; cursor: pointer; }
+  .ev:hover { background: #f3f4f6; }
+  .ev.sel { background: var(--blue); }
+  .ev .rid { color: var(--blue-d); font-weight: 600; }
+  .ev .comp { color: var(--green-d); display: inline-block; width: 74px; }
+  .ev.rej .evn { color: var(--red-d); }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: .95; }
+  .hint { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="venue">TicketFlow</h1>
+  <span>Lesson 2 · everything in one process's memory</span>
+  <span id="invariants"></span>
+</header>
+
+<main>
+  <section>
+    <h2>Seat map — click a green seat to hold it</h2>
+    <div class="stage">STAGE</div>
+    <div id="map"></div>
+    <div class="legend">
+      <span><i style="background:var(--green)"></i>Available</span>
+      <span><i style="background:var(--orange)"></i>Held (a lease)</span>
+      <span><i style="background:var(--blue)"></i>Booked (a fact)</span>
+    </div>
+  </section>
+
+  <div style="display:grid; gap:24px; align-content:start;">
+    <section>
+      <h2>Buyer &amp; holds</h2>
+      <div class="counts" id="counts"></div>
+      <div class="controls">
+        <label>Buyer <input type="text" id="buyer" value="alice"></label>
+        <button class="btn warn" id="skip">Skip ahead 60 s</button>
+        <span id="skew" style="color:var(--muted)"></span>
+      </div>
+      <div id="holds"></div>
+      <p class="hint">Hold a seat, then skip ahead past the countdown. The seat frees itself, with no background job involved. Nothing woke up; the next look at the seat noticed the deadline had passed.</p>
+    </section>
+
+    <section>
+      <h2>Event trace — click a line to follow its request id</h2>
+      <div id="trace"></div>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let state = null, lastSeq = 0, events = [], selectedRid = null, justSeat = null;
+let myHolds = JSON.parse(sessionStorage.getItem('holds') || '[]');   // holds created from this tab
+let drift = 0;                                                       // server clock minus local clock, ms
+
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2600); }
+function saveHolds() { sessionStorage.setItem('holds', JSON.stringify(myHolds)); }
+
+async function api(method, path, body) {
+  const res = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) { toast((data && data.code ? data.code + ': ' : '') + (data && data.message || res.statusText) + (data && data.requestId ? '  [' + data.requestId + ']' : '')); return null; }
+  return data;
+}
+
+async function refresh() {
+  const s = await fetch('/api/state').then(r => r.json());
+  state = s; drift = s.nowMs - Date.now();
+  renderMap(); renderCounts(); renderHolds();
+  $('venue').textContent = s.venue;
+  $('skew').textContent = s.clockSkewSeconds ? 'clock skipped +' + s.clockSkewSeconds + ' s' : '';
+  const inv = $('invariants');
+  inv.className = s.invariantViolations.length ? 'bad' : 'ok';
+  inv.textContent = s.invariantViolations.length ? '✗ ' + s.invariantViolations.length + ' invariant violation(s): ' + s.invariantViolations[0] : '✓ model consistent';
+  const ev = await fetch('/api/events?after=' + lastSeq).then(r => r.json());
+  if (ev.length) { events = events.concat(ev).slice(-300); lastSeq = ev[ev.length - 1].seq; renderTrace(); }
+}
+
+function renderMap() {
+  const rows = {};
+  state.seats.forEach(s => (rows[s.row] = rows[s.row] || []).push(s));
+  $('map').innerHTML = '';
+  Object.keys(rows).forEach(r => {
+    const div = document.createElement('div'); div.className = 'row';
+    div.innerHTML = '<b>' + r + '</b>';
+    rows[r].forEach(s => {
+      const b = document.createElement('button');
+      b.className = 'seat ' + s.status + (s.id === justSeat ? ' just' : '');
+      b.textContent = s.number; b.disabled = s.status !== 'AVAILABLE';
+      b.title = s.id + ' · ' + s.status + (s.heldBy ? ' by ' + s.heldBy : '');
+      b.onclick = () => holdSeat(s.id);
+      div.appendChild(b);
+    });
+    $('map').appendChild(div);
+  });
+}
+
+function renderCounts() {
+  $('counts').innerHTML = ['AVAILABLE', 'HELD', 'BOOKED'].map(k =>
+    '<div class="count c-' + k + '"><strong>' + state.counts[k] + '</strong><small>' + k.toLowerCase() + '</small></div>').join('');
+}
+
+function renderHolds() {
+  const bySeat = Object.fromEntries(state.seats.map(s => [s.holdId, s]));
+  myHolds = myHolds.filter(h => bySeat[h.id]);          // forget holds that ended (confirmed, released, expired)
+  saveHolds();
+  const box = $('holds');
+  if (!myHolds.length) { box.innerHTML = '<p class="hint">No active holds from this tab yet.</p>'; return; }
+  box.innerHTML = '';
+  myHolds.forEach(h => {
+    const seat = bySeat[h.id];
+    const left = Math.max(0, Math.round((seat.holdExpiresAtMs - (Date.now() + drift)) / 1000));
+    const d = document.createElement('div'); d.className = 'hold';
+    d.innerHTML = '<div class="grow"><strong>Seat ' + seat.id + '</strong> · ' + seat.heldBy + '<br><small>' + h.id + ' · expires in ' + left + ' s</small></div>';
+    const ok = document.createElement('button'); ok.className = 'btn go'; ok.textContent = 'Confirm'; ok.onclick = () => confirmHold(h.id);
+    const no = document.createElement('button'); no.className = 'btn'; no.textContent = 'Release'; no.onclick = () => releaseHold(h.id);
+    d.appendChild(ok); d.appendChild(no); box.appendChild(d);
+  });
+}
+
+function renderTrace() {
+  const box = $('trace'); const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  box.innerHTML = '';
+  events.forEach(e => {
+    const d = document.createElement('div');
+    d.className = 'ev' + (e.requestId === selectedRid ? ' sel' : '') + (/rejected|expired/.test(e.event) ? ' rej' : '');
+    const t = new Date(e.atMs).toTimeString().slice(0, 8);
+    const f = Object.entries(e.fields || {}).map(([k, v]) => k + '=' + v).join(' ');
+    d.innerHTML = t + ' <span class="rid">' + e.requestId + '</span> <span class="comp">' + e.component + '</span> <span class="evn">' + e.event + '</span> ' + f;
+    d.onclick = () => { selectedRid = selectedRid === e.requestId ? null : e.requestId; renderTrace(); };
+    box.appendChild(d);
+  });
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+async function holdSeat(seatId) {
+  const buyer = $('buyer').value.trim() || 'anonymous';
+  const h = await api('POST', '/api/holds', { seatId, buyerId: buyer });
+  if (h) { myHolds.push(h); saveHolds(); justSeat = seatId; }
+  refresh();
+}
+async function confirmHold(id) { const b = await api('POST', '/api/holds/' + id + '/confirm'); if (b) toast('Booked seat ' + b.seatId + ' · ' + b.id); refresh(); }
+async function releaseHold(id) { await api('DELETE', '/api/holds/' + id); refresh(); }
+$('skip').onclick = async () => { await api('POST', '/api/dev/clock/advance?seconds=60'); refresh(); };
+
+refresh(); setInterval(refresh, 1000);
+</script>
+</body>
+</html>

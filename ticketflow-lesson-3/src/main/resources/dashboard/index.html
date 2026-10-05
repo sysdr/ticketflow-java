@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Day 1 · The on-sale stampede</title>
+<style>
+  :root {
+    --ink: #16293b;
+    --muted: #5d7285;
+    --glass: #f3f7fa;
+    --card: #ffffff;
+    --line: #d7e2ea;
+    --blue: #3b7cc0;
+    --blue-soft: #cfe3f5;
+    --teal: #1f9d8a;
+    --teal-soft: #cdeee8;
+    --orange: #ee8a2e;
+    --orange-soft: #fde2c6;
+    --shadow: 0 6px 18px rgba(22, 41, 59, .10);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 28px clamp(16px, 4vw, 48px) 48px;
+    background: var(--glass); color: var(--ink);
+    font: 16px/1.5 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  .nav { margin: 0 0 10px; font-size: 14px; } .nav a { color: var(--blue); font-weight: 600; margin-right: 16px; }
+  h1 { margin: 0 0 4px; font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -.02em; }
+  .sub { margin: 0 0 22px; color: var(--muted); max-width: 62ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; margin-bottom: 22px; }
+  label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+  input {
+    width: 120px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px;
+    font: inherit; color: var(--ink); background: var(--card);
+  }
+  button {
+    padding: 11px 20px; border: 0; border-radius: 12px; font: inherit; font-weight: 700; cursor: pointer;
+    background: var(--orange); color: #2b1600; box-shadow: var(--shadow);
+  }
+  button.quiet { background: var(--card); color: var(--ink); border: 1px solid var(--line); box-shadow: none; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  .pace { margin: 0 0 22px; padding: 12px 16px; background: var(--blue-soft); border-radius: 14px; max-width: 70ch; }
+  .main { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .main { grid-template-columns: 1fr; } }
+  .panel { background: var(--card); border-radius: 18px; padding: 18px; box-shadow: var(--shadow); }
+  .panel h2 { margin: 0 0 2px; font-size: 18px; }
+  .panel p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+  .seats { display: grid; grid-template-columns: repeat(25, 1fr); gap: 4px; }
+  .seat { aspect-ratio: 1; border-radius: 50%; background: var(--blue-soft); transition: background .15s; }
+  .seat.sold { background: var(--teal); }
+  .big { font-size: 34px; font-weight: 700; margin-top: 10px; }
+  canvas { width: 100%; height: 260px; display: block; }
+  .legend { display: flex; gap: 18px; font-size: 14px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin-top: 22px; }
+  .card { background: var(--card); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow); border-left: 8px solid var(--line); }
+  .card.hot { border-left-color: var(--orange); background: #fffaf4; }
+  .card .n { font-size: 30px; font-weight: 700; }
+  .card .t { font-weight: 600; }
+  .card .d { color: var(--muted); font-size: 14px; }
+  .result { margin-top: 22px; display: none; }
+  .result.on { display: block; }
+  .lat { display: flex; gap: 26px; flex-wrap: wrap; }
+  .lat div { min-width: 90px; }
+  .lat b { display: block; font-size: 26px; }
+</style>
+</head>
+<body>
+  <p class="nav"><a href="/">Stampede</a><a href="/box-office">Box office</a><a href="/fallacy-lab">Fallacy lab</a></p>
+  <h1>Ten thousand buyers, five hundred seats</h1>
+  <p class="sub">One TicketFlow server, one Tomcat thread pool. Fire the stampede and watch where the line forms, what the server can't see, and how much work it does for buyers who already left.</p>
+
+  <div class="controls">
+    <label>Buyers <input id="buyers" type="number" value="10000" min="1" max="20000"></label>
+    <label>Arrive within (ms) <input id="window" type="number" value="1000" min="100" max="60000"></label>
+    <label>Patience (ms) <input id="patience" type="number" value="2000" min="100" max="60000"></label>
+    <button id="fire">Fire the stampede</button>
+    <button id="reset" class="quiet">Reset</button>
+  </div>
+
+  <p class="pace" id="pace"></p>
+
+  <div class="main">
+    <section class="panel">
+      <h2>Seats</h2>
+      <p>Each dot is one seat. Teal means sold.</p>
+      <div class="seats" id="seats"></div>
+      <div class="big"><span id="soldCount">0</span> sold</div>
+    </section>
+    <section class="panel">
+      <h2>Working vs. waiting</h2>
+      <p>The server only counts the teal line. The orange line is the line outside the door.</p>
+      <canvas id="chart" width="900" height="260"></canvas>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--teal)"></i>Threads busy (server's view)</span>
+        <span><i class="dot" style="background:var(--orange)"></i>Buyers waiting (buyers' view)</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="cards">
+    <div class="card" id="c1"><div class="n" id="n1">0 / 0</div><div class="t">Threads at peak</div><div class="d" id="d1">Every thread busy means the next buyer waits.</div></div>
+    <div class="card" id="c2"><div class="n" id="n2">0</div><div class="t">Most buyers waiting at once</div><div class="d" id="d2">The server hasn't seen any of them yet.</div></div>
+    <div class="card" id="c3"><div class="n" id="n3">0</div><div class="t">Buyers who gave up</div><div class="d" id="d3">Timed out or refused a connection.</div></div>
+    <div class="card" id="c4"><div class="n" id="n4">0</div><div class="t">Bookings finished after the buyer left</div><div class="d" id="d4">Work nobody was waiting for.</div></div>
+  </div>
+
+  <section class="panel result" id="result">
+    <h2>Buyers who got an answer</h2>
+    <p id="resultNote"></p>
+    <div class="lat">
+      <div><b id="p50">-</b>median</div>
+      <div><b id="p95">-</b>95th pct</div>
+      <div><b id="p99">-</b>99th pct</div>
+      <div><b id="pmax">-</b>slowest</div>
+      <div><b id="elapsed">-</b>whole run</div>
+    </div>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+const seatsEl = $('seats');
+for (let i = 0; i < 500; i++) { const d = document.createElement('i'); d.className = 'seat'; seatsEl.appendChild(d); }
+const seatDots = seatsEl.children;
+
+const history = [];   // {busy, waiting}
+let peakWaiting = 0, lastState = 'idle', threads = 50, workMs = 25;
+
+function renderPace() {
+  const buyers = +$('buyers').value, win = +$('window').value;
+  const inFlight = Math.round(buyers / (win / 1000) * (workMs / 1000));
+  $('pace').textContent = `At this pace about ${inFlight.toLocaleString()} bookings are in progress at the same moment. The server has ${threads} threads, each held for ${workMs} ms per booking.`;
+}
+['buyers', 'window'].forEach(id => $(id).addEventListener('input', renderPace));
+
+function draw() {
+  const c = $('chart'), g = c.getContext('2d'), W = c.width, H = c.height, pad = 28;
+  g.clearRect(0, 0, W, H);
+  const top = Math.max(100, ...history.map(h => h.waiting), threads * 2);
+  const x = i => pad + i * (W - pad * 2) / Math.max(1, 399);
+  const y = v => H - pad - v / top * (H - pad * 2);
+  g.strokeStyle = '#d7e2ea'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(pad, H - pad); g.lineTo(W - pad, H - pad); g.stroke();
+  g.setLineDash([6, 6]); g.strokeStyle = '#1f9d8a';
+  g.beginPath(); g.moveTo(pad, y(threads)); g.lineTo(W - pad, y(threads)); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#5d7285'; g.font = '13px system-ui';
+  g.fillText(`${threads} threads`, pad + 4, y(threads) - 6);
+  g.fillText(top.toLocaleString(), pad + 4, pad - 10);
+  const line = (key, color) => {
+    g.strokeStyle = color; g.lineWidth = 3; g.lineJoin = 'round'; g.beginPath();
+    history.forEach((h, i) => i ? g.lineTo(x(i), y(h[key])) : g.moveTo(x(i), y(h[key])));
+    g.stroke();
+  };
+  line('waiting', '#ee8a2e'); line('busy', '#1f9d8a');
+}
+
+function ms(v) { return v < 0 ? '-' : v.toLocaleString() + ' ms'; }
+
+async function poll() {
+  try {
+    const { server: s, run: r } = await (await fetch('/state', { cache: 'no-store' })).json();
+    threads = s.threads; workMs = s.workMs;
+    const active = r.state === 'running' || r.state === 'done';
+    const sent = r.sent || 0;
+    const waiting = active ? Math.max(0, sent - r.responded - r.timedOut - r.failed) : 0;
+    if (r.state === 'running' && lastState !== 'running') { history.length = 0; peakWaiting = 0; }
+    lastState = r.state;
+    peakWaiting = Math.max(peakWaiting, waiting);
+    if (r.state === 'running' || history.length === 0) {
+      history.push({ busy: s.busy, waiting });
+      if (history.length > 400) history.shift();
+    }
+    for (let i = 0; i < 500; i++) seatDots[i].classList.toggle('sold', i < s.seatsSold);
+    $('soldCount').textContent = s.seatsSold;
+    $('n1').textContent = `${s.peakBusy} / ${s.threads}`;
+    $('c1').classList.toggle('hot', s.peakBusy >= s.threads);
+    $('n2').textContent = peakWaiting.toLocaleString();
+    $('d2').textContent = active ? `The server counted ${s.received.toLocaleString()} of ${sent.toLocaleString()} requests so far.` : 'The server hasn\'t seen any of them yet.';
+    $('c2').classList.toggle('hot', peakWaiting > s.threads);
+    const gone = active ? r.timedOut + r.failed : 0;
+    $('n3').textContent = gone.toLocaleString();
+    $('c3').classList.toggle('hot', gone > 0);
+    $('n4').textContent = s.ghost.toLocaleString();
+    $('d4').textContent = s.completed ? `${Math.round(100 * s.ghost / s.completed)}% of all bookings the server finished.` : 'Work nobody was waiting for.';
+    $('c4').classList.toggle('hot', s.ghost > 0);
+    $('fire').disabled = r.state === 'running';
+    $('result').classList.toggle('on', r.state === 'done');
+    if (r.state === 'done') {
+      $('resultNote').textContent = `${(r.ok + r.soldOut).toLocaleString()} of ${r.buyers.toLocaleString()} buyers got an answer within ${r.patienceMs.toLocaleString()} ms; ${(r.timedOut + r.failed).toLocaleString()} did not.`;
+      $('p50').textContent = ms(r.p50); $('p95').textContent = ms(r.p95);
+      $('p99').textContent = ms(r.p99); $('pmax').textContent = ms(r.max);
+      $('elapsed').textContent = ms(r.elapsedMs);
+    }
+    renderPace(); draw();
+  } catch (e) { /* server restarting; try again */ }
+}
+
+$('fire').addEventListener('click', () =>
+  fetch(`/start?buyers=${$('buyers').value}&windowMs=${$('window').value}&patienceMs=${$('patience').value}`, { method: 'POST' }));
+$('reset').addEventListener('click', () => fetch('/reset', { method: 'POST' }).then(() => { history.length = 0; peakWaiting = 0; }));
+
+setInterval(poll, 250); poll();
+</script>
+</body>
+</html>

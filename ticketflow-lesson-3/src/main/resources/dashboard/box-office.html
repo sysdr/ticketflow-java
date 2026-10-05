@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Day 2 · Box office</title>
+<style>
+  :root { --ink:#16293b; --muted:#5d7285; --glass:#f3f7fa; --card:#fff; --line:#d7e2ea;
+    --blue:#3b7cc0; --blue-soft:#cfe3f5; --teal:#1f9d8a; --orange:#ee8a2e; --orange-soft:#fde2c6;
+    --shadow:0 6px 18px rgba(22,41,59,.10); }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:28px clamp(16px,4vw,48px) 48px; background:var(--glass); color:var(--ink);
+    font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; font-variant-numeric:tabular-nums; }
+  .nav { margin:0 0 10px; font-size:14px; } .nav a { color:var(--blue); font-weight:600; margin-right:16px; }
+  h1 { margin:0 0 4px; font-size:clamp(26px,3.4vw,38px); letter-spacing:-.02em; }
+  .sub { margin:0 0 20px; color:var(--muted); max-width:66ch; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin-bottom:18px; }
+  label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
+  input { width:150px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--ink); background:var(--card); }
+  button { padding:10px 18px; border:0; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; background:var(--orange); color:#2b1600; box-shadow:var(--shadow); }
+  button.quiet { background:var(--card); color:var(--ink); border:1px solid var(--line); box-shadow:none; font-weight:600; }
+  button.small { padding:6px 12px; font-size:14px; border-radius:10px; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+  .counts { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .pill { background:var(--card); border-radius:14px; padding:8px 16px; box-shadow:var(--shadow); font-weight:600; }
+  .pill i { display:inline-block; width:12px; height:12px; border-radius:4px; margin-right:8px; vertical-align:-1px; }
+  .main { display:grid; grid-template-columns:minmax(300px,1.3fr) minmax(280px,1fr); gap:22px; align-items:start; }
+  @media (max-width:900px){ .main { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border-radius:18px; padding:18px; box-shadow:var(--shadow); margin-bottom:22px; }
+  .panel h2 { margin:0 0 2px; font-size:18px; } .panel p.d { margin:0 0 12px; color:var(--muted); font-size:14px; }
+  .stage { text-align:center; font-size:13px; color:var(--muted); margin-bottom:8px; letter-spacing:.02em; }
+  .map { display:grid; gap:4px; }
+  .seat { aspect-ratio:1; border-radius:6px; border:0; padding:0; background:var(--blue-soft); cursor:pointer; box-shadow:none; }
+  .seat.H { background:var(--orange); cursor:default; } .seat.B { background:var(--teal); cursor:default; }
+  .hold { display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:10px 0; border-top:1px solid var(--line); }
+  .hold:first-of-type { border-top:0; }
+  .bar { grid-column:1 / -1; height:8px; border-radius:6px; background:var(--orange-soft); overflow:hidden; }
+  .bar span { display:block; height:100%; background:var(--orange); }
+  .acts { display:flex; gap:8px; }
+  .empty { color:var(--muted); font-size:14px; }
+  .evt { font-size:14px; padding:4px 0; border-top:1px solid var(--line); display:flex; gap:10px; }
+  .evt:first-child { border-top:0; } .evt b { min-width:150px; }
+  .evt.HOLD_PLACED b { color:var(--orange); } .evt.BOOKING_CONFIRMED b { color:var(--teal); }
+  .evt.HOLD_EXPIRED b { color:#a05a12; } .evt.HOLD_RELEASED b { color:var(--muted); }
+  #msg { min-height:24px; font-weight:600; margin:0 0 10px; }
+  #msg.err { color:#b3401c; }
+</style>
+</head>
+<body>
+  <p class="nav"><a href="/">Stampede</a><a href="/box-office">Box office</a><a href="/fallacy-lab">Fallacy lab</a></p>
+  <h1>Seats are held, then sold</h1>
+  <p class="sub">Click a blue seat to hold it. A hold is a lease: confirm it before the clock runs out, or the seat frees itself. Nothing stores "this seat is held". The status is worked out from holds, bookings, and the time.</p>
+
+  <div class="controls">
+    <label>Buyer <input id="buyer" value="sam"></label>
+    <button id="five" class="quiet">Hold 5 seats and walk away</button>
+    <button id="reset" class="quiet">Reset venue</button>
+  </div>
+  <p id="msg"></p>
+  <div class="counts">
+    <span class="pill"><i style="background:var(--blue-soft)"></i><span id="cA">0</span> available</span>
+    <span class="pill"><i style="background:var(--orange)"></i><span id="cH">0</span> held</span>
+    <span class="pill"><i style="background:var(--teal)"></i><span id="cB">0</span> booked</span>
+  </div>
+
+  <div class="main">
+    <section class="panel">
+      <h2 id="venueName">Venue</h2>
+      <p class="d">Rows run A at the front. Hover a seat for its id.</p>
+      <div class="stage">STAGE</div>
+      <div class="map" id="map"></div>
+    </section>
+    <div>
+      <section class="panel">
+        <h2>Live holds</h2>
+        <p class="d">Each bar is the time left on a hold.</p>
+        <div id="holds"><div class="empty">No live holds.</div></div>
+      </section>
+      <section class="panel">
+        <h2>What just happened</h2>
+        <p class="d">The same events the logs carry, newest first.</p>
+        <div id="events"></div>
+      </section>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let built = '', ttlMs = 30000, skew = 0, lastHolds = [];
+
+function build(v) {
+  const key = v.rows + 'x' + v.perRow;
+  if (key === built) return;
+  built = key;
+  const m = $('map'); m.innerHTML = ''; m.style.gridTemplateColumns = `repeat(${v.perRow}, 1fr)`;
+  for (let r = 0; r < v.rows; r++) for (let n = 1; n <= v.perRow; n++) {
+    const id = String.fromCharCode(65 + r) + '-' + String(n).padStart(2, '0');
+    const b = document.createElement('button');
+    b.className = 'seat A'; b.title = id; b.dataset.id = id; b.setAttribute('aria-label', 'Seat ' + id);
+    b.addEventListener('click', () => holdSeat(id));
+    m.appendChild(b);
+  }
+}
+
+function say(text, bad) { const m = $('msg'); m.textContent = text; m.className = bad ? 'err' : ''; }
+
+async function post(path) {
+  const r = await fetch(path, { method: 'POST' });
+  const body = await r.json();
+  return { ok: r.ok, body };
+}
+
+async function holdSeat(id) {
+  const buyer = encodeURIComponent($('buyer').value || 'guest');
+  const { ok, body } = await post(`/hold?seat=${id}&buyer=${buyer}`);
+  say(ok ? `Hold ${body.id} placed on ${body.seat}.` : `${body.error}: ${body.message}`, !ok);
+  poll();
+}
+
+async function act(kind, id) {
+  const { ok, body } = await post(`/${kind}?hold=${id}`);
+  say(ok ? (kind === 'confirm' ? `Booked ${body.seat} (${body.id}).` : `Released ${body.seat}.`) : `${body.error}: ${body.message}`, !ok);
+  poll();
+}
+
+function renderHolds() {
+  const now = Date.now() + skew, box = $('holds');
+  if (!lastHolds.length) { box.innerHTML = '<div class="empty">No live holds.</div>'; return; }
+  box.innerHTML = '';
+  lastHolds.forEach(h => {
+    const left = Math.max(0, h.expiresAtMs - now), pct = Math.min(100, left / ttlMs * 100);
+    const d = document.createElement('div'); d.className = 'hold';
+    d.innerHTML = `<div><b>${h.seat}</b> · ${h.buyer} · ${h.id}<br><small>${(left / 1000).toFixed(1)} s left</small></div>
+      <div class="acts"><button class="small" data-c="${h.id}">Confirm</button><button class="small quiet" data-r="${h.id}">Release</button></div>
+      <div class="bar"><span style="width:${pct}%"></span></div>`;
+    d.querySelector('[data-c]').addEventListener('click', () => act('confirm', h.id));
+    d.querySelector('[data-r]').addEventListener('click', () => act('release', h.id));
+    box.appendChild(d);
+  });
+}
+
+async function poll() {
+  try {
+    const v = await (await fetch('/venue', { cache: 'no-store' })).json();
+    build(v.venue); $('venueName').textContent = v.venue.name;
+    skew = v.nowMs - Date.now();
+    const seats = $('map').children;
+    for (let i = 0; i < seats.length; i++) seats[i].className = 'seat ' + v.map[i];
+    $('cA').textContent = v.counts.available; $('cH').textContent = v.counts.held; $('cB').textContent = v.counts.booked;
+    lastHolds = v.holds;
+    const first = v.holds[0]; if (first) ttlMs = Math.max(ttlMs, first.expiresAtMs - first.placedAtMs);
+    $('events').innerHTML = v.events.slice().reverse().slice(0, 14).map(e =>
+      `<div class="evt ${e.type}"><b>${e.type.replace('_', ' ').toLowerCase()}</b><span>${e.seat} · ${e.buyer} · ${e.hold}</span></div>`).join('')
+      || '<div class="empty">Nothing yet.</div>';
+    renderHolds();
+  } catch (e) { /* server restarting */ }
+}
+
+$('five').addEventListener('click', async () => {
+  const buyer = encodeURIComponent($('buyer').value || 'guest');
+  for (let i = 1; i <= 5; i++) await post(`/hold?seat=A-${String(i).padStart(2, '0')}&buyer=${buyer}`);
+  say('Five seats held. Watch them free themselves when the bars run out.'); poll();
+});
+$('reset').addEventListener('click', async () => { await post('/reset'); say('Venue reset.'); poll(); });
+
+setInterval(poll, 500); setInterval(renderHolds, 100); poll();
+</script>
+</body>
+</html>

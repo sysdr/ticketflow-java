@@ -1,0 +1,8 @@
+services:
+  ticketflow:
+    build: .
+    ports:
+      - "8080:8080"   # booking API (the server under test)
+      - "8081:8081"   # dashboard, on its own threads
+    ulimits:
+      nofile: 65536   # ten thousand buyers means ten thousand sockets

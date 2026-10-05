@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Day 4 · Latency budgets</title>
+<style>
+  :root { --ink:#16293b; --muted:#5d7285; --glass:#f3f7fa; --card:#fff; --line:#d7e2ea;
+    --blue:#3b7cc0; --teal:#1f9d8a; --orange:#ee8a2e; --violet:#8a6fd1; --amber:#d9a400; --reserve:#d7e2ea;
+    --red:#b3401c; --red-soft:#f9d9cd; --ok-soft:#cdeee8; --shadow:0 6px 18px rgba(22,41,59,.10); }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px clamp(16px,4vw,48px) 56px; background:var(--glass); color:var(--ink);
+    font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; font-variant-numeric:tabular-nums; }
+  .nav { margin:0 0 10px; font-size:14px; } .nav a { color:var(--blue); font-weight:600; margin-right:16px; }
+  h1 { margin:0 0 4px; font-size:clamp(26px,3.4vw,38px); letter-spacing:-.02em; }
+  .sub { margin:0 0 22px; color:var(--muted); max-width:70ch; }
+  .panel { background:var(--card); border-radius:18px; padding:18px; box-shadow:var(--shadow); margin-bottom:22px; }
+  .panel h2 { margin:0 0 2px; font-size:18px; } .panel p.d { margin:0 0 14px; color:var(--muted); font-size:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }
+  label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
+  input[type=number], select { width:140px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--ink); background:var(--card); }
+  button.go { padding:11px 22px; border:0; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; background:var(--orange); color:#2b1600; box-shadow:var(--shadow); }
+  button:disabled { opacity:.5; cursor:default; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+  .legend { display:flex; flex-wrap:wrap; gap:16px; font-size:14px; color:var(--muted); margin:0 0 12px; }
+  .legend i { display:inline-block; width:12px; height:12px; border-radius:4px; margin-right:6px; vertical-align:-1px; }
+  .bar { display:flex; height:34px; border-radius:10px; overflow:hidden; background:var(--glass); gap:2px; position:relative; }
+  .bar span { display:block; height:100%; }
+  .barlabel { font-size:14px; color:var(--muted); margin:12px 0 4px; }
+  .mark { position:absolute; top:-4px; bottom:-4px; border-left:3px dashed var(--ink); }
+  .verdict { font-size:18px; font-weight:600; margin:0 0 6px; } .verdict small { display:block; font-weight:400; font-size:14px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:6px; }
+  th, td { text-align:left; padding:7px 8px; border-top:1px solid var(--line); } th { color:var(--muted); font-weight:600; border-top:0; }
+  .chip { display:inline-block; padding:2px 10px; border-radius:20px; font-weight:600; font-size:13px; }
+  .chip.ok { background:var(--ok-soft); } .chip.over { background:var(--red-soft); color:var(--red); }
+  .wf { margin:14px 0 22px; } .wf h3 { margin:0 0 6px; font-size:15px; } .wf .meta { color:var(--muted); font-size:13px; margin-top:4px; }
+  #running { display:none; color:var(--muted); margin:10px 0 0; } #running.on { display:block; }
+  .hint { color:var(--muted); font-size:14px; max-width:70ch; }
+</style>
+</head>
+<body>
+  <p class="nav"><a href="/">Stampede</a><a href="/box-office">Box office</a><a href="/fallacy-lab">Fallacy lab</a><a href="/latency-budget">Latency budget</a></p>
+  <h1>One booking, one budget</h1>
+  <p class="sub">A buyer should wait no more than <b id="total">300</b> ms for a booking. Every hop gets a slice of that, and the reserve belongs to nobody. Run real bookings, then see which hop spends more than its slice.</p>
+
+  <section class="panel">
+    <h2>1. The budget</h2>
+    <p class="d">Bar widths are to scale. The slices plus the reserve add up to the total.</p>
+    <div class="legend" id="legend"></div>
+    <div class="bar" id="budgetBar"></div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Make it hurt</h2>
+    <p class="d">Slow the payment provider, slow the link, or send more buyers at once. Then run.</p>
+    <div class="row">
+      <label>Payment takes (ms)<input id="payment" type="number" value="120" min="0" max="2000"></label>
+      <label>Link<select id="link"><option value="NONE">Healthy</option><option value="LATENCY">Slow link</option></select></label>
+      <label>Link delay each way (ms)<input id="delay" type="number" value="100" min="0" max="2000"></label>
+      <label>Bookings<input id="requests" type="number" value="100" min="1" max="500"></label>
+      <label>At the same time<input id="parallel" type="number" value="10" min="1" max="300"></label>
+      <button class="go" id="run">Run the bookings</button>
+    </div>
+    <p id="running">Running. A few throwaway bookings go first so a cold JVM doesn't distort the numbers. Each run starts from an empty venue.</p>
+  </section>
+
+  <section class="panel" id="results" style="display:none">
+    <h2>3. Where the time went</h2>
+    <p class="verdict" id="verdict"></p>
+    <table>
+      <thead><tr><th>Hop</th><th>Budget</th><th>Typical (p50)</th><th>Slow end (p95)</th><th></th></tr></thead>
+      <tbody id="hops"></tbody>
+    </table>
+    <p class="hint" id="wirenote"></p>
+    <div id="waterfalls"></div>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+const COLOR = { wire:'var(--orange)', lock:'var(--blue)', domain:'var(--teal)', payment:'var(--violet)', render:'var(--amber)', reserve:'var(--reserve)' };
+const NAME = { wire:'Wire + queue (nobody owns it)', lock:'Waiting for the venue lock', domain:'Hold and confirm work', payment:'Payment provider', render:'Building the reply', reserve:'Reserve' };
+let budgetKey = '';
+
+function drawBudget(b) {
+  const key = JSON.stringify(b); if (key === budgetKey) return; budgetKey = key;
+  $('total').textContent = b.totalMs;
+  const parts = [...b.hops.map(h => [h.name, h.budgetMs]), ['reserve', b.reserveMs]];
+  $('legend').innerHTML = parts.map(([n, v]) => `<span><i style="background:${COLOR[n]}"></i>${NAME[n]} · ${v} ms</span>`).join('');
+  $('budgetBar').innerHTML = parts.map(([n, v]) => `<span title="${NAME[n]}: ${v} ms" style="background:${COLOR[n]};width:${v / b.totalMs * 100}%"></span>`).join('');
+}
+
+function waterfall(label, s, b) {
+  const max = Math.max(b.totalMs, s.totalMs) * 1.04;
+  const segs = ['wire','lock','domain','payment','render'].map(h => ({ h, v: s[h + 'Ms'] }));
+  const bars = segs.map(x => `<span title="${NAME[x.h]}: ${x.v.toFixed(1)} ms" style="background:${COLOR[x.h]};width:${x.v / max * 100}%"></span>`).join('');
+  const budgetLine = `<div class="mark" style="left:${b.totalMs / max * 100}%" title="Total budget"></div>`;
+  const left = s.leftMs >= 0 ? ` The server believed it still had ${s.leftMs.toFixed(0)} ms left when it replied.` : '';
+  return `<div class="wf"><h3>${label} · ${s.rid} · ${s.totalMs.toFixed(0)} ms ${s.within ? '<span class="chip ok">within budget</span>' : '<span class="chip over">over budget</span>'}</h3>
+    <div class="bar">${bars}${budgetLine}</div>
+    <div class="meta">Dashed line = the ${b.totalMs} ms budget. Wire + queue ${s.wireMs.toFixed(0)} ms, lock ${s.lockMs.toFixed(1)}, work ${s.domainMs.toFixed(1)}, payment ${s.paymentMs.toFixed(0)}, reply ${s.renderMs.toFixed(1)}.${left}</div></div>`;
+}
+
+function render(st) {
+  const lab = st.lab; drawBudget(lab.budget);
+  $('running').classList.toggle('on', lab.state === 'running');
+  $('run').disabled = lab.state === 'running';
+  if (!lab.run) { $('results').style.display = 'none'; return; }
+  const r = lab.run, b = lab.budget;
+  $('results').style.display = '';
+  const worst = Object.entries(r.worst).filter(([k]) => k !== 'none').sort((a, c) => c[1] - a[1])[0];
+  $('verdict').innerHTML = `${r.within} of ${r.ok} bookings finished within ${b.totalMs} ms.` +
+    (worst ? `<small>The hop that most often spent more than its slice: <b>${NAME[worst[0]]}</b> (${worst[1]} bookings).</small>` : `<small>No hop went over its slice.</small>`);
+  $('hops').innerHTML = r.hops.map(h => {
+    const over = h.p95Ms > h.budgetMs;
+    return `<tr><td><i class="chip" style="background:${COLOR[h.name]};padding:0 7px;margin-right:6px">&nbsp;</i>${NAME[h.name]}</td><td>${h.budgetMs} ms</td><td>${h.p50Ms.toFixed(1)} ms</td><td>${h.p95Ms.toFixed(1)} ms</td><td><span class="chip ${over ? 'over' : 'ok'}">${over ? 'over at the slow end' : 'within'}</span></td></tr>`;
+  }).join('');
+  const wire = r.hops.find(h => h.name === 'wire');
+  $('wirenote').textContent = `Wire + queue is not measured by the server. It is the client's total minus the sum of the hops the server reported (Server-Timing), so it holds the network, the connection, and any wait for a free thread.`;
+  const labels = ['A typical booking', 'The slowest booking'];
+  $('waterfalls').innerHTML = r.featured.map((s, i) => waterfall(labels[i] || 'Booking', s, b)).join('');
+}
+
+$('run').addEventListener('click', async () => {
+  await fetch(`/lab/fault?mode=${$('link').value}&delayMs=${$('delay').value}&percent=100&bytesPerSec=2000`, { method: 'POST' });
+  const r = await fetch(`/budget/run?requests=${$('requests').value}&parallel=${$('parallel').value}&paymentMs=${$('payment').value}`, { method: 'POST' });
+  if (!r.ok) $('running').textContent = 'A run is already in progress.';
+  poll();
+});
+
+async function poll() {
+  try { render(await (await fetch('/budget/state', { cache: 'no-store' })).json()); } catch (e) { /* restarting */ }
+}
+setInterval(poll, 500); poll();
+</script>
+</body>
+</html>

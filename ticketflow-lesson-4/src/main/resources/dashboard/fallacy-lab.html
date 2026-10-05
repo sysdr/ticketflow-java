@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Day 3 · The network is not your friend</title>
+<style>
+  :root { --ink:#16293b; --muted:#5d7285; --glass:#f3f7fa; --card:#fff; --line:#d7e2ea;
+    --blue:#3b7cc0; --blue-soft:#cfe3f5; --teal:#1f9d8a; --teal-soft:#cdeee8; --orange:#ee8a2e; --orange-soft:#fde2c6;
+    --red:#b3401c; --red-soft:#f9d9cd; --shadow:0 6px 18px rgba(22,41,59,.10); }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px clamp(16px,4vw,48px) 56px; background:var(--glass); color:var(--ink);
+    font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif; font-variant-numeric:tabular-nums; }
+  .nav { margin:0 0 10px; font-size:14px; } .nav a { color:var(--blue); font-weight:600; margin-right:16px; }
+  h1 { margin:0 0 4px; font-size:clamp(26px,3.4vw,38px); letter-spacing:-.02em; }
+  .sub { margin:0 0 22px; color:var(--muted); max-width:68ch; }
+  .panel { background:var(--card); border-radius:18px; padding:18px; box-shadow:var(--shadow); margin-bottom:22px; }
+  .panel h2 { margin:0 0 2px; font-size:18px; } .panel p.d { margin:0 0 14px; color:var(--muted); font-size:14px; }
+  .modes { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+  .mode { border:2px solid var(--line); background:var(--card); border-radius:14px; padding:10px 14px; cursor:pointer; text-align:left; font:inherit; color:var(--ink); min-width:150px; }
+  .mode b { display:block; } .mode small { color:var(--muted); }
+  .mode[aria-pressed="true"] { border-color:var(--orange); background:#fffaf4; }
+  .row { display:flex; flex-wrap:wrap; gap:14px; align-items:end; }
+  label { display:grid; gap:4px; font-size:14px; color:var(--muted); }
+  input[type=number], select { width:130px; padding:9px 10px; border:1px solid var(--line); border-radius:10px; font:inherit; color:var(--ink); background:var(--card); }
+  label.check { display:flex; align-items:center; gap:8px; font-size:15px; color:var(--ink); }
+  button.go { padding:11px 22px; border:0; border-radius:12px; font:inherit; font-weight:700; cursor:pointer; background:var(--orange); color:#2b1600; box-shadow:var(--shadow); }
+  button:disabled { opacity:.5; cursor:default; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid var(--blue); outline-offset:2px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+  .tile { border-radius:14px; padding:12px 14px; border-left:8px solid var(--line); background:var(--glass); }
+  .tile .n { font-size:30px; font-weight:700; } .tile .t { font-weight:600; font-size:15px; }
+  .v-FINE { border-left-color:var(--teal); } .v-SLOW { border-left-color:var(--blue); }
+  .v-UNHEARD_SUCCESS, .v-RETRY_BLOCKED { border-left-color:var(--red); background:var(--red-soft); }
+  .v-LOST_REQUEST, .v-NO_REPLY, .v-CUT_OFF { border-left-color:var(--orange); background:var(--orange-soft); }
+  .v-RETRY_RECOVERED { border-left-color:var(--teal); background:var(--teal-soft); } .v-SEAT_TAKEN { border-left-color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:14px; }
+  th, td { text-align:left; padding:7px 8px; border-top:1px solid var(--line); } th { color:var(--muted); font-weight:600; border-top:0; }
+  .tag { display:inline-block; padding:2px 10px; border-radius:20px; font-weight:600; font-size:13px; background:var(--glass); }
+  .stat { color:var(--muted); font-size:14px; margin-top:10px; }
+  .fallacies { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .fal { border-radius:16px; padding:14px 16px; background:var(--card); box-shadow:var(--shadow); border-top:6px solid var(--line); }
+  .fal.shown { border-top-color:var(--orange); } .fal h3 { margin:0 0 4px; font-size:16px; }
+  .fal .badge { font-size:12px; font-weight:700; color:var(--muted); } .fal.shown .badge { color:#a05a12; }
+  .fal p { margin:6px 0 0; font-size:14px; color:var(--muted); } .fal p b { color:var(--ink); }
+  #running { display:none; color:var(--muted); margin:10px 0 0; } #running.on { display:block; }
+</style>
+</head>
+<body>
+  <p class="nav"><a href="/">Stampede</a><a href="/box-office">Box office</a><a href="/fallacy-lab">Fallacy lab</a><a href="/latency-budget">Latency budget</a></p>
+  <h1>The network is not your friend</h1>
+  <p class="sub">Every call below is a real request over a real socket, sent through a flaky link to the real TicketFlow server. For each one you see what the client <em>heard</em> next to what the server <em>actually did</em>. Nothing here is fixed yet. That's the point.</p>
+
+  <section class="panel">
+    <h2>1. Pick what the link does</h2>
+    <p class="d">It misbehaves on the share of requests you choose.</p>
+    <div class="modes" id="modes">
+      <button class="mode" data-mode="NONE" aria-pressed="true"><b>Healthy</b><small>Nothing wrong</small></button>
+      <button class="mode" data-mode="LATENCY" aria-pressed="false"><b>Slow link</b><small>Delays each direction</small></button>
+      <button class="mode" data-mode="LOSE_REQUEST" aria-pressed="false"><b>Request lost</b><small>Server never sees it</small></button>
+      <button class="mode" data-mode="LOSE_RESPONSE" aria-pressed="false"><b>Reply lost</b><small>Server does it, you never hear</small></button>
+      <button class="mode" data-mode="THROTTLE" aria-pressed="false"><b>Thin pipe</b><small>Reply trickles out</small></button>
+    </div>
+    <div class="row">
+      <label>Delay each way (ms)<input id="delay" type="number" value="400" min="0" max="5000"></label>
+      <label>Hits this % of requests<input id="percent" type="number" value="100" min="0" max="100"></label>
+      <label>Thin pipe (bytes/s)<input id="bps" type="number" value="500" min="50" max="1000000"></label>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>2. Send some buyers through it</h2>
+    <p class="d">Hold a seat for each buyer, or ask for the seat map (a bigger reply).</p>
+    <div class="row">
+      <label>Call <select id="call"><option value="hold">Hold a seat</option><option value="map">Fetch seat map</option></select></label>
+      <label>Buyers <input id="requests" type="number" value="10" min="1" max="25"></label>
+      <label>Patience (ms)<input id="patience" type="number" value="800" min="100" max="5000"></label>
+      <label class="check"><input id="retry" type="checkbox"> Retry once when you hear nothing</label>
+      <button class="go" id="run">Run the lab</button>
+    </div>
+    <p id="running">Running. Late arrivals get a moment to land before the server is asked what really happened.</p>
+  </section>
+
+  <section class="panel">
+    <h2>3. What the client heard vs. what the server did</h2>
+    <p class="d" id="mapnote">Run the lab to see results.</p>
+    <div class="tiles" id="tiles"></div>
+    <table id="table" style="display:none">
+      <thead><tr><th>Request id</th><th>Seat</th><th>Client heard</th><th>Server holds the seat</th><th>Retry heard</th><th>Verdict</th></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+    <div class="stat" id="stat"></div>
+  </section>
+
+  <section class="panel">
+    <h2>The eight fallacies, and when TicketFlow meets each one</h2>
+    <p class="d">Three of them are reproduced above. The rest are marked with the lesson where TicketFlow starts to feel them.</p>
+    <div class="fallacies">
+      <div class="fal shown"><div class="badge">SHOWN ABOVE</div><h3>1. The network is reliable</h3><p><b>Request lost, Reply lost.</b> Retries and safe repeats arrive in Days 16, 27 and 28.</p></div>
+      <div class="fal shown"><div class="badge">SHOWN ABOVE</div><h3>2. Latency is zero</h3><p><b>Slow link.</b> Each hop gets a time budget on Day 4, and Day 26 shows a slow call spreading backward.</p></div>
+      <div class="fal shown"><div class="badge">SHOWN ABOVE</div><h3>3. Bandwidth is infinite</h3><p><b>Thin pipe.</b> Payload size gets measured on Day 23.</p></div>
+      <div class="fal"><div class="badge">NOT REPRODUCED HERE</div><h3>4. The network is secure</h3><p>Authentication moves to the gateway on Day 24.</p></div>
+      <div class="fal"><div class="badge">NOT REPRODUCED HERE</div><h3>5. Topology doesn't change</h3><p>Load balancers on Day 6, and services finding each other by name on Day 25.</p></div>
+      <div class="fal"><div class="badge">NOT REPRODUCED HERE</div><h3>6. There is one administrator</h3><p>Likely from Day 22, once TicketFlow splits into services with separate owners.</p></div>
+      <div class="fal"><div class="badge">NOT REPRODUCED HERE</div><h3>7. Transport cost is zero</h3><p>Day 23 compares the cost of REST and gRPC calls.</p></div>
+      <div class="fal"><div class="badge">NOT REPRODUCED HERE</div><h3>8. The network is homogeneous</h3><p>Day 23 puts two different protocols side by side.</p></div>
+    </div>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+let mode = 'NONE';
+const LABEL = {
+  FINE: 'Worked', SLOW: 'Worked, but slowly', UNHEARD_SUCCESS: 'It happened. You never heard.',
+  LOST_REQUEST: 'It never arrived', RETRY_BLOCKED: 'Retry hit your own hold', RETRY_RECOVERED: 'Retry fixed it',
+  SEAT_TAKEN: 'Seat was already taken', CUT_OFF: 'Reply cut off midway', NO_REPLY: 'Nothing came back'
+};
+const ORDER = ['FINE','SLOW','UNHEARD_SUCCESS','RETRY_BLOCKED','LOST_REQUEST','RETRY_RECOVERED','CUT_OFF','NO_REPLY','SEAT_TAKEN'];
+
+document.querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => {
+  mode = b.dataset.mode;
+  document.querySelectorAll('.mode').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+  if (mode === 'THROTTLE') $('call').value = 'map'; else if ($('call').value === 'map') $('call').value = 'hold';
+}));
+
+$('run').addEventListener('click', async () => {
+  await fetch(`/lab/fault?mode=${mode}&delayMs=${$('delay').value}&percent=${$('percent').value}&bytesPerSec=${$('bps').value}`, { method: 'POST' });
+  const r = await fetch(`/lab/run?call=${$('call').value}&requests=${$('requests').value}&patienceMs=${$('patience').value}&retry=${$('retry').checked}`, { method: 'POST' });
+  if (!r.ok) $('mapnote').textContent = 'A run is already in progress.';
+  poll();
+});
+
+function render(s) {
+  const run = s.run, rows = run.rows || [];
+  $('running').classList.toggle('on', run.state === 'running');
+  $('run').disabled = run.state === 'running';
+  $('stat').textContent = s.proxy.seen ? `The link has carried ${s.proxy.seen} requests and misbehaved on ${s.proxy.faulted}.` : '';
+  if (!rows.length) { $('tiles').innerHTML = ''; $('table').style.display = 'none'; return; }
+  const counts = {}; rows.forEach(r => counts[r.verdict] = (counts[r.verdict] || 0) + 1);
+  $('tiles').innerHTML = ORDER.filter(k => counts[k]).map(k =>
+    `<div class="tile v-${k}"><div class="n">${counts[k]}</div><div class="t">${LABEL[k]}</div></div>`).join('');
+  $('table').style.display = '';
+  $('body').innerHTML = rows.map(r => {
+    const heard = r.first === 'TIMEOUT' ? `silence after ${r.firstMs} ms${r.firstBytes ? ` (${r.firstBytes} bytes arrived)` : ''}` : `${r.first} in ${r.firstMs} ms`;
+    const server = r.call === 'map' ? '-' : (r.applied ? 'yes, held' : 'no');
+    const retry = r.retry === 'none' ? '-' : `${r.retry} in ${r.retryMs} ms`;
+    return `<tr><td>${r.rid}</td><td>${r.seat}</td><td>${heard}</td><td>${server}</td><td>${retry}</td><td><span class="tag v-${r.verdict}">${LABEL[r.verdict] || r.verdict}</span></td></tr>`;
+  }).join('');
+  const withBytes = rows.filter(r => r.firstBytes > 0);
+  $('mapnote').textContent = run.call === 'map' && withBytes.length
+    ? `The seat map reply is about ${Math.max(...withBytes.map(r => r.firstBytes)).toLocaleString()} bytes. A thin pipe turns bytes into seconds.`
+    : 'Each row is one buyer. Compare the third and fourth columns.';
+}
+
+async function poll() {
+  try { render(await (await fetch('/lab/state', { cache: 'no-store' })).json()); } catch (e) { /* restarting */ }
+}
+setInterval(poll, 500); poll();
+</script>
+</body>
+</html>

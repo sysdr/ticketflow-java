@@ -1,0 +1,49 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ticketflow
+
+ticketflow:
+  box:
+    # The name this process stamps on bookings and log lines.
+    node: box-a
+    # Threads allowed to do CPU work at once. 0 = every core the JVM can see.
+    cores: 0
+  signing:
+    # CPU milliseconds one ticket signature should cost. Calibrated at startup.
+    target-millis: 8
+    # Set above 0 to pin the hash rounds and skip calibration.
+    rounds: 0
+  budget:
+    # The whole-request latency budget from lesson 4.
+    total-millis: 200
+  bench:
+    # How long a simulated buyer waits before giving up.
+    timeout-millis: 2000
+    # The most unanswered buyers the bench keeps open at once.
+    max-in-flight: 3000
+    # One request in this many is logged on both sides with its request id.
+    sample-every: 100
+    presets:
+      - name: one-small
+        label: 1 small box
+        targets:
+          - http://localhost:8081
+      - name: one-big
+        label: 1 big box (scale up)
+        targets:
+          - http://localhost:8083
+      - name: two-small
+        label: 2 small boxes (scale out)
+        targets:
+          - http://localhost:8081
+          - http://localhost:8082
+
+logging:
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level %msg%n"
+  level:
+    root: WARN
+    com.ticketflow: INFO

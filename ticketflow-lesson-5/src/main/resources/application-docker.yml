@@ -1,0 +1,17 @@
+# Active inside docker compose, where boxes are reached by service name.
+ticketflow:
+  bench:
+    presets:
+      - name: one-small
+        label: 1 small box
+        targets:
+          - http://box-small-1:8080
+      - name: one-big
+        label: 1 big box (scale up)
+        targets:
+          - http://box-big:8080
+      - name: two-small
+        label: 2 small boxes (scale out)
+        targets:
+          - http://box-small-1:8080
+          - http://box-small-2:8080

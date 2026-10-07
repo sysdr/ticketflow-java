@@ -1,0 +1,44 @@
+# Three boxes of two sizes, plus the bench that sends buyers at them.
+# "cpus" is a hard limit enforced by the container runtime, so here the size of
+# a box is real CPU, not just a thread count.
+services:
+  box-small-1:
+    build: .
+    image: ticketflow:lesson-5
+    cpus: 1.0
+    environment:
+      TICKETFLOW_BOX_NODE: box-small-1
+      TICKETFLOW_BOX_CORES: "1"
+    ports:
+      - "8081:8080"
+
+  box-small-2:
+    image: ticketflow:lesson-5
+    depends_on: [box-small-1]
+    cpus: 1.0
+    environment:
+      TICKETFLOW_BOX_NODE: box-small-2
+      TICKETFLOW_BOX_CORES: "1"
+    ports:
+      - "8082:8080"
+
+  box-big:
+    image: ticketflow:lesson-5
+    depends_on: [box-small-1]
+    cpus: 4.0
+    environment:
+      TICKETFLOW_BOX_NODE: box-big
+      TICKETFLOW_BOX_CORES: "4"
+    ports:
+      - "8083:8080"
+
+  bench:
+    image: ticketflow:lesson-5
+    depends_on: [box-small-1, box-small-2, box-big]
+    cpus: 2.0
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      TICKETFLOW_BOX_NODE: bench
+      TICKETFLOW_BOX_CORES: "1"
+    ports:
+      - "9090:8080"

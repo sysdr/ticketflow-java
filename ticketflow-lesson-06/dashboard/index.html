@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TicketFlow Lesson 6 — Load Balancing Dashboard</title>
+<style>
+  :root {
+    --bg:        #0f1117;
+    --panel:     #1a1d27;
+    --border:    #2d3148;
+    --text:      #e2e4f0;
+    --muted:     #7b80a0;
+    --accent-rr: #5b8dee;   /* round-robin — blue  */
+    --accent-lc: #50c878;   /* least-conn  — green */
+    --warn:      #f0a050;
+    --bar-bg:    #252840;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 32px; }
+
+  /* ── layout ── */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 16px;
+  }
+  .rr-title  { color: var(--accent-rr); }
+  .lc-title  { color: var(--accent-lc); }
+  .cmp-title { color: var(--text); }
+
+  /* ── stat rows ── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .stat {
+    background: var(--bar-bg);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+  }
+  .stat-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .stat-value { font-size: 22px; font-weight: 700; }
+  .stat-unit  { font-size: 11px; color: var(--muted); }
+
+  /* ── bar chart ── */
+  .bar-section { margin-top: 16px; }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .bar-label { width: 64px; font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  .bar-track {
+    flex: 1;
+    height: 18px;
+    background: var(--bar-bg);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width .4s ease;
+  }
+  .bar-fill.rr { background: var(--accent-rr); }
+  .bar-fill.lc { background: var(--accent-lc); }
+  .bar-num { width: 56px; font-size: 12px; text-align: right; flex-shrink: 0; }
+
+  /* ── comparison table ── */
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  .winner { color: var(--accent-lc); font-weight: 700; }
+  .loser  { color: var(--muted); }
+
+  /* ── upload area ── */
+  .upload-area {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+  .upload-area:hover { border-color: var(--accent-rr); }
+  .upload-area input { display: none; }
+  .upload-area label { cursor: pointer; }
+  .btn {
+    display: inline-block;
+    margin-top: 10px;
+    padding: 8px 18px;
+    background: var(--accent-rr);
+    color: #fff;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .demo-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    margin-left: 8px;
+  }
+  .status-bar {
+    font-size: 12px;
+    color: var(--warn);
+    text-align: center;
+    margin-bottom: 18px;
+    min-height: 18px;
+  }
+  #results { display: none; }
+</style>
+</head>
+<body>
+
+<h1>TicketFlow — Load Balancing Dashboard</h1>
+<p class="subtitle">Lesson 6 · Round-Robin vs Least-Connections · 80 RPS · 60 s · 80/20 booking/seatmap mix</p>
+
+<!-- ── file loader ── -->
+<div class="upload-area" id="dropZone">
+  <label>
+    Drop <code>rr-results.csv</code> and <code>lc-results.csv</code> here, or click to browse
+    <br>
+    <input type="file" id="csvFiles" accept=".csv" multiple>
+    <button class="btn" onclick="document.getElementById('csvFiles').click(); event.preventDefault()">Browse files</button>
+    <button class="btn demo-btn" id="demoBtn" onclick="loadDemo(); event.preventDefault()">Load demo data</button>
+  </label>
+</div>
+<p class="status-bar" id="statusBar"></p>
+
+<!-- ── results ── -->
+<div id="results">
+
+  <div class="grid">
+    <!-- RR panel -->
+    <div class="panel">
+      <div class="panel-title rr-title">Round-Robin</div>
+      <div class="stat-grid" id="rr-stats"></div>
+      <div class="bar-section" id="rr-bars"></div>
+    </div>
+
+    <!-- LC panel -->
+    <div class="panel">
+      <div class="panel-title lc-title">Least-Connections</div>
+      <div class="stat-grid" id="lc-stats"></div>
+      <div class="bar-section" id="lc-bars"></div>
+    </div>
+  </div>
+
+  <!-- comparison table -->
+  <div class="panel">
+    <div class="panel-title cmp-title">Head-to-Head Comparison</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th style="color:var(--accent-rr)">Round-Robin</th>
+          <th style="color:var(--accent-lc)">Least-Connections</th>
+          <th>Winner</th>
+          <th>Why</th>
+        </tr>
+      </thead>
+      <tbody id="cmpBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+// ── CSV parser ────────────────────────────────────────────────────────────────
+function parseCsv(text) {
+  const lines = text.trim().split('\n');
+  const header = lines[0].split(',');
+  return lines.slice(1).map(line => {
+    const vals = line.split(',');
+    return Object.fromEntries(header.map((k, i) => [k.trim(), vals[i]?.trim()]));
+  });
+}
+
+// ── percentile ────────────────────────────────────────────────────────────────
+function pct(sorted, p) {
+  if (!sorted.length) return 0;
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
+// ── analyze ───────────────────────────────────────────────────────────────────
+function analyze(rows) {
+  const booking = rows.filter(r => r.request_type === 'booking').map(r => +r.latency_ms).sort((a,b)=>a-b);
+  const seatmap = rows.filter(r => r.request_type === 'seatmap').map(r => +r.latency_ms).sort((a,b)=>a-b);
+  const all     = rows.map(r => +r.latency_ms).sort((a,b)=>a-b);
+  const errors  = rows.filter(r => +r.status_code < 200 || +r.status_code >= 500).length;
+
+  const avg = arr => arr.length ? Math.round(arr.reduce((s,v)=>s+v,0)/arr.length) : 0;
+
+  return {
+    total:       rows.length,
+    errors,
+    booking: { p50: pct(booking,50), p95: pct(booking,95), p99: pct(booking,99), avg: avg(booking) },
+    seatmap: { p50: pct(seatmap,50), p95: pct(seatmap,95), p99: pct(seatmap,99), avg: avg(seatmap) },
+    overall: { p50: pct(all,50),     p95: pct(all,95),     p99: pct(all,99),     avg: avg(all) },
+  };
+}
+
+// ── render panels ─────────────────────────────────────────────────────────────
+function renderPanel(prefix, stats, accentClass) {
+  const statsEl = document.getElementById(`${prefix}-stats`);
+  const barsEl  = document.getElementById(`${prefix}-bars`);
+
+  statsEl.innerHTML = `
+    <div class="stat">
+      <div class="stat-label">Requests</div>
+      <div class="stat-value">${stats.total}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Errors</div>
+      <div class="stat-value" style="color:${stats.errors?'var(--warn)':'inherit'}">${stats.errors}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Avg overall</div>
+      <div class="stat-value">${stats.overall.avg}<span class="stat-unit"> ms</span></div>
+    </div>
+  `;
+
+  const maxVal = Math.max(
+    stats.booking.p50, stats.booking.p95, stats.booking.p99,
+    stats.seatmap.p50, stats.seatmap.p95, stats.seatmap.p99, 1
+  );
+
+  const bar = (label, val) => `
+    <div class="bar-row">
+      <span class="bar-label">${label}</span>
+      <div class="bar-track">
+        <div class="bar-fill ${accentClass}" style="width:${Math.min(100, val/maxVal*100).toFixed(1)}%"></div>
+      </div>
+      <span class="bar-num">${val} ms</span>
+    </div>`;
+
+  barsEl.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Booking (fast path)</div>
+    ${bar('p50', stats.booking.p50)}
+    ${bar('p95', stats.booking.p95)}
+    ${bar('p99', stats.booking.p99)}
+    <div style="font-size:11px;color:var(--muted);margin:14px 0 8px;text-transform:uppercase;letter-spacing:.05em">Seat-Map (slow path)</div>
+    ${bar('p50', stats.seatmap.p50)}
+    ${bar('p95', stats.seatmap.p95)}
+    ${bar('p99', stats.seatmap.p99)}
+  `;
+}
+
+// ── comparison table ──────────────────────────────────────────────────────────
+function renderTable(rr, lc) {
+  const rows = [
+    { label: 'Booking p95',  rrV: rr.booking.p95, lcV: lc.booking.p95,
+      why: 'Short requests — both algorithms behave identically under steady load' },
+    { label: 'Seat-map p95', rrV: rr.seatmap.p95, lcV: lc.seatmap.p95,
+      why: 'Slow requests — LC isolates queuing; RR blindly stacks them' },
+    { label: 'Seat-map p99', rrV: rr.seatmap.p99, lcV: lc.seatmap.p99,
+      why: 'LC advantage grows at the tail — worst-case requests drain faster' },
+    { label: 'Overall avg',  rrV: rr.overall.avg, lcV: lc.overall.avg,
+      why: 'Combined effect of the slow-path improvement on aggregate latency' },
+    { label: 'Errors',       rrV: rr.errors,      lcV: lc.errors,
+      why: 'Errors should be near zero for both; high RR errors → queue overflow' },
+  ];
+
+  const tbody = document.getElementById('cmpBody');
+  tbody.innerHTML = rows.map(r => {
+    const rrWins = r.rrV <= r.lcV;  // lower is better for latency, errors
+    return `<tr>
+      <td>${r.label}</td>
+      <td class="${rrWins ? 'winner' : 'loser'}">${r.rrV} ms</td>
+      <td class="${!rrWins ? 'winner' : 'loser'}">${r.lcV} ms</td>
+      <td>${rrWins ? '<span style="color:var(--accent-rr)">RR</span>' : '<span style="color:var(--accent-lc)">LC</span>'}</td>
+      <td style="color:var(--muted);font-size:12px">${r.why}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── main render ───────────────────────────────────────────────────────────────
+function render(rrRows, lcRows) {
+  const rrStats = analyze(rrRows);
+  const lcStats = analyze(lcRows);
+
+  renderPanel('rr', rrStats, 'rr');
+  renderPanel('lc', lcStats, 'lc');
+  renderTable(rrStats, lcStats);
+
+  document.getElementById('results').style.display = 'block';
+}
+
+// ── file input ────────────────────────────────────────────────────────────────
+document.getElementById('csvFiles').addEventListener('change', function(e) {
+  const files = Array.from(e.target.files);
+  loadFiles(files);
+});
+
+// drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = 'var(--accent-rr)'; });
+dz.addEventListener('dragleave', () => { dz.style.borderColor = 'var(--border)'; });
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.style.borderColor = 'var(--border)';
+  loadFiles(Array.from(e.dataTransfer.files));
+});
+
+function loadFiles(files) {
+  const rrFile = files.find(f => f.name.includes('rr'));
+  const lcFile = files.find(f => f.name.includes('lc'));
+  if (!rrFile || !lcFile) {
+    document.getElementById('statusBar').textContent =
+      'Drop both rr-results.csv and lc-results.csv (filenames must contain "rr" and "lc")';
+    return;
+  }
+  document.getElementById('statusBar').textContent = '';
+  Promise.all([rrFile.text(), lcFile.text()]).then(([rrText, lcText]) => {
+    render(parseCsv(rrText), parseCsv(lcText));
+  });
+}
+
+// ── demo data generator ───────────────────────────────────────────────────────
+// Simulates realistic results showing LC advantage on slow path.
+function loadDemo() {
+  function gaussian(mean, sd) {
+    // Box-Muller
+    const u = 1 - Math.random(), v = Math.random();
+    return Math.max(1, Math.round(mean + sd * Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v)));
+  }
+
+  function makeRows(algo, bookingMean, bookingSD, seatmapMean, seatmapSD, n) {
+    const rows = [];
+    const now = Date.now();
+    for (let i = 0; i < n; i++) {
+      const isSeatmap = i % 5 === 4;
+      const lat = isSeatmap
+        ? gaussian(seatmapMean, seatmapSD)
+        : gaussian(bookingMean, bookingSD);
+      rows.push({
+        timestamp_ms: String(now + i * 12),
+        request_type: isSeatmap ? 'seatmap' : 'booking',
+        latency_ms:   String(lat),
+        status_code:  '200',
+        algorithm:    algo,
+      });
+    }
+    return rows;
+  }
+
+  // RR: booking fast, seatmap queues because slow reqs stack on one instance
+  const rrRows = makeRows('rr',  30, 8,  620, 180, 4800);
+  // LC: same booking latency, but seatmap is much better (less queuing)
+  const lcRows = makeRows('lc',  31, 8,  420,  60, 4800);
+
+  document.getElementById('statusBar').textContent = 'Showing demo data — run the load generator to see real results';
+  render(rrRows, lcRows);
+}
+</script>
+</body>
+</html>

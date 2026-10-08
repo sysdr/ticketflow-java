@@ -243,9 +243,16 @@ public class MixedLoadGenerator {
             java.nio.file.Files.createDirectories(p.getParent());
         }
 
+        // Snapshot under the same lock as record() so virtual threads can't
+        // mutate the list while we iterate (ConcurrentModificationException).
+        List<String[]> snapshot;
+        synchronized (this) {
+            snapshot = new ArrayList<>(rows);
+        }
+
         try (var out = new PrintWriter(new FileWriter(outputPath))) {
             out.println("timestamp_ms,request_type,latency_ms,status_code,algorithm");
-            for (String[] row : rows) {
+            for (String[] row : snapshot) {
                 out.println(String.join(",", row));
             }
         }

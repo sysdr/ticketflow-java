@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TicketFlow · Lesson 7 · Any box, any request</title>
+<style>
+  :root {
+    --ink: #17212b;
+    --muted: #5b6875;
+    --line: #dfe5ea;
+    --paper: #f6f8f9;
+    --card: #ffffff;
+    --blue: #2f6fd0;
+    --blue-soft: #e6f0fc;
+    --orange: #d9730d;
+    --orange-soft: #fdefdc;
+    --green: #1e8e5a;
+    --green-soft: #e2f5ea;
+    --red: #c0362c;
+    --red-soft: #fbe6e3;
+    --grey: #7a8794;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 15px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header { padding: 28px 32px 8px; max-width: 1180px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+  header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+  main { max-width: 1180px; margin: 0 auto; padding: 16px 32px 48px; display: grid; gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .card h2 { margin: 0 0 4px; font-size: 15px; }
+  .card .sub { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tab { border: 1.5px solid var(--line); color: var(--muted); font-weight: 600; background: var(--card); }
+  .tab.on { border-color: var(--ink); color: var(--ink); box-shadow: inset 0 -3px 0 var(--ink); }
+  .controls { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; }
+  .presets { display: flex; flex-wrap: wrap; gap: 10px; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer; border-radius: 10px;
+    padding: 10px 14px; border: 1.5px solid var(--ink); background: var(--card); color: var(--ink);
+  }
+  button.preset { border-color: var(--c); color: var(--c); background: var(--soft); }
+  button.preset:hover:not(:disabled) { background: var(--c); color: #fff; }
+  button.quiet { border-color: var(--line); color: var(--muted); font-weight: 500; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .fields { display: flex; gap: 10px; flex-wrap: wrap; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  input {
+    font: inherit; width: 92px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+  }
+  #notice { min-height: 20px; margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+  #notice.bad { color: var(--red); }
+
+  .scores { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .score { border: 1px solid var(--line); border-top: 5px solid var(--c); border-radius: 12px; padding: 14px 16px; background: var(--card); }
+  .score h3 { margin: 0; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--paper); color: var(--muted); white-space: nowrap; }
+  .badge.FELL_OVER { background: var(--red-soft); color: var(--red); }
+  .badge.FINISHED { background: var(--green-soft); color: var(--green); }
+  .badge.RUNNING { background: var(--blue-soft); color: var(--blue); }
+  .badge.FAILED { background: var(--red-soft); color: var(--red); }
+  .knee { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; margin: 8px 0 0; line-height: 1; }
+  .knee small { font-size: 13px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .facts { display: flex; gap: 18px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .facts b { display: block; font-size: 18px; color: var(--ink); }
+  .facts .twice b { color: var(--red); }
+  .targets { margin-top: 10px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+  .split { margin-top: 14px; display: grid; gap: 6px; font-size: 12.5px; }
+  .split .row { display: grid; grid-template-columns: 96px 1fr 178px; gap: 8px; align-items: center; }
+  .split .track { height: 12px; background: var(--paper); border-radius: 6px; overflow: hidden; display: flex; }
+  .split .ok { background: var(--c); }
+  .split .bad { background: var(--red); }
+  .split .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .split .num b { color: var(--ink); }
+  .split .num .lost { color: var(--red); font-weight: 600; }
+  .empty { color: var(--muted); padding: 18px 0; }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+  svg.chart { width: 100%; height: auto; display: block; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 18px; height: 4px; border-radius: 2px; background: var(--c); margin-right: 6px; vertical-align: middle; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  th:first-child, td:first-child, th:last-child, td:last-child { text-align: left; }
+  td.verdict { font-weight: 600; }
+  td.verdict.ok { color: var(--green); }
+  td.verdict.slow { color: var(--orange); }
+  td.verdict.down { color: var(--red); }
+  code { background: var(--paper); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Can any box answer any request?</h1>
+  <p>Two boxes behind one load balancer. Each tab is one situation; run every button in it and compare what
+     the buyers got back. The first two tabs are today's lesson.</p>
+</header>
+
+<main>
+  <section class="card">
+    <div class="tabs" id="tabs"></div>
+    <p class="sub" id="groupHint" style="margin-top:12px"></p>
+    <div class="controls">
+      <div class="presets" id="presets"></div>
+      <button class="quiet" id="clear">Clear results</button>
+    </div>
+    <p id="notice"></p>
+  </section>
+
+  <section>
+    <div class="scores" id="scores"></div>
+  </section>
+
+  <section class="charts">
+    <div class="card">
+      <h2>Answers per second</h2>
+      <p class="sub">On the dashed line, every buyer got an answer. Below it, the boxes are falling behind.</p>
+      <svg class="chart" id="throughput" viewBox="0 0 520 320" role="img" aria-label="Answers per second against buyers per second"></svg>
+    </div>
+    <div class="card">
+      <h2>p99 latency</h2>
+      <p class="sub">What the unluckiest 1 in 100 buyers waited. The red line is the latency budget.</p>
+      <svg class="chart" id="latency" viewBox="0 0 520 320" role="img" aria-label="p99 latency against buyers per second"></svg>
+    </div>
+  </section>
+  <div class="legend" id="legend"></div>
+
+  <section class="card">
+    <h2 id="tableTitle">Steps of the latest run</h2>
+    <p class="sub">To follow one buyer through bench, balancer and box, grep any <code>request_id</code> from the bench log in the other logs.</p>
+    <table>
+      <thead><tr>
+        <th>Buyers/s</th><th>Answered/s</th><th>Booked</th><th>Seat taken</th><th>Session lost</th><th>Timeouts</th>
+        <th>Errors</th><th>Not sent</th><th>p50 ms</th><th>p99 ms</th><th>Verdict</th>
+      </tr></thead>
+      <tbody id="steps"><tr><td colspan="11" class="empty">Nothing measured yet.</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const PALETTE = [
+  { c: "#2f6fd0", soft: "#e6f0fc" },
+  { c: "#d9730d", soft: "#fdefdc" },
+  { c: "#1e8e5a", soft: "#e2f5ea" },
+  { c: "#7a8794", soft: "#eef1f3" }
+];
+const SVG_NS = "http://www.w3.org/2000/svg";
+let presets = [];
+let groups = [];
+let selectedGroup = null;
+let userPicked = false;
+
+const $ = id => document.getElementById(id);
+const el = (name, attrs = {}, text) => {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const fmt = (value, digits = 0) => Number(value).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });
+
+/** A preset's colour is its position inside its group, so strategy A is always blue and B always orange. */
+function colorFor(group, label) {
+  const index = presets.filter(p => p.group === group).findIndex(p => p.label === label);
+  return PALETTE[index < 0 ? PALETTE.length - 1 : Math.min(index, PALETTE.length - 1)];
+}
+
+function notice(message, bad = false) {
+  $("notice").textContent = message;
+  $("notice").className = bad ? "bad" : "";
+}
+
+async function loadPresets() {
+  presets = await (await fetch("/api/bench/presets")).json();
+  groups = [...new Set(presets.map(p => p.group))];
+  selectedGroup = groups[0];
+  drawTabs();
+}
+
+function drawTabs() {
+  const tabs = $("tabs");
+  tabs.replaceChildren();
+  groups.forEach(group => {
+    const tab = document.createElement("button");
+    tab.className = "tab" + (group === selectedGroup ? " on" : "");
+    tab.textContent = group;
+    tab.onclick = () => { selectedGroup = group; userPicked = true; drawTabs(); refresh(); };
+    tabs.append(tab);
+  });
+  const inGroup = presets.filter(p => p.group === selectedGroup);
+  $("groupHint").textContent = inGroup.length ? inGroup[0].description : "";
+  const holder = $("presets");
+  holder.replaceChildren();
+  inGroup.forEach(preset => {
+    const colors = colorFor(preset.group, preset.label);
+    const button = document.createElement("button");
+    button.className = "preset";
+    button.style.setProperty("--c", colors.c);
+    button.style.setProperty("--soft", colors.soft);
+    button.textContent = "Run: " + preset.label;
+    button.title = preset.startRate === preset.endRate
+      ? "steady " + preset.startRate + " buyers/s for " + preset.stepSeconds + " s"
+      : preset.startRate + " to " + preset.endRate + " buyers/s, +" + preset.stepRate + " every " + preset.stepSeconds + " s";
+    button.onclick = () => startRun(preset);
+    holder.append(button);
+  });
+}
+
+async function startRun(preset) {
+  const response = await fetch("/api/bench/presets/" + encodeURIComponent(preset.name) + "/run", { method: "POST" });
+  if (response.status === 202) {
+    notice("Started “" + preset.label + "”. Results fill in one step at a time.");
+  } else {
+    const problem = await response.json().catch(() => ({}));
+    notice(problem.message || ("The bench answered HTTP " + response.status), true);
+  }
+  refresh();
+}
+
+/** Keeps the newest run for each label, so re-running a preset replaces its result. */
+function latestPerLabel(runs) {
+  const byLabel = new Map();
+  runs.forEach(run => byLabel.set(run.label, run));
+  return [...byLabel.values()];
+}
+
+function failedPercent(run) {
+  let offered = 0, failed = 0;
+  run.steps.forEach(s => { offered += s.offered; failed += s.errors + s.timeouts + s.sessionLost + s.shed; });
+  return offered ? 100 * failed / offered : 0;
+}
+
+function sessionsLost(run) {
+  return run.steps.reduce((sum, s) => sum + s.sessionLost, 0);
+}
+
+function verdictOf(step, budget) {
+  if (step.fellOver) return ["down", "Fell over"];
+  if (step.healthy) return ["ok", "Healthy"];
+  return step.p99Millis > budget ? ["slow", "Over budget"] : ["down", "Failures"];
+}
+
+function drawScores(runs) {
+  const holder = $("scores");
+  if (!runs.length) {
+    holder.innerHTML = '<p class="empty">No runs in this group yet. Press a Run button above.</p>';
+    return;
+  }
+  holder.replaceChildren();
+  runs.forEach(run => {
+    const color = colorFor(run.group, run.label).c;
+    const card = document.createElement("div");
+    card.className = "score";
+    card.style.setProperty("--c", color);
+    const done = run.status !== "RUNNING";
+    const failed = failedPercent(run);
+    card.innerHTML =
+      '<h3><span></span><span class="badge ' + run.status + '">' + run.status.replace("_", " ") + "</span></h3>" +
+      '<p class="knee">' + fmt(run.kneeRate) + " <small>buyers/s inside " + run.budgetMillis + " ms</small></p>" +
+      '<div class="facts">' +
+        '<div class="' + (failed >= 1 ? "twice" : "") + '"><b>' + fmt(failed, 1) + "%</b>buyers failed</div>" +
+        (run.checkout ? '<div class="' + (sessionsLost(run) > 0 ? "twice" : "") + '"><b>' + fmt(sessionsLost(run)) + "</b>sessions lost</div>" : "") +
+        "<div><b>" + (done ? fmt(run.seatsSold) : "…") + "</b>bookings, 500 seats</div>" +
+        '<div class="' + (run.seatsSoldTwice > 0 ? "twice" : "") + '"><b>' + (done ? fmt(run.seatsSoldTwice) : "…") + "</b>sold twice</div>" +
+      "</div>" +
+      '<div class="split"></div><div class="targets"></div>';
+    card.querySelector("h3 span").textContent = run.label;
+    const split = card.querySelector(".split");
+    const total = run.shares.reduce((sum, share) => sum + share.sent, 0);
+    run.shares.forEach(share => {
+      const pct = total ? 100 * share.sent / total : 0;
+      const badPct = total ? 100 * share.failed / total : 0;
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = '<span></span><div class="track"><div class="ok"></div><div class="bad"></div></div><span class="num"></span>';
+      row.children[0].textContent = share.name;
+      row.querySelector(".ok").style.width = (pct - badPct) + "%";
+      row.querySelector(".bad").style.width = badPct + "%";
+      row.querySelector(".num").innerHTML = "<b>" + fmt(pct) + "%</b> of traffic" +
+        (share.failed ? ' · <span class="lost">' + fmt(share.failed) + " failed</span>" : "");
+      split.append(row);
+    });
+    card.querySelector(".targets").textContent =
+      (run.note ? run.note + " · " : "") + run.id + (run.strategy ? " · " + run.strategy : "") +
+      (run.checkout ? " · " + run.checkout + " sessions" : "") + (run.fault ? " · fault: " + run.fault : "");
+    holder.append(card);
+  });
+}
+
+function niceCeil(value) {
+  if (value <= 0) return 1;
+  const power = Math.pow(10, Math.floor(Math.log10(value)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * power >= value) return m * power;
+  return 10 * power;
+}
+
+function drawChart(svg, runs, pick, options) {
+  svg.replaceChildren();
+  const W = 520, H = 320, left = 56, right = 16, top = 14, bottom = 42;
+  const steps = runs.flatMap(run => run.steps);
+  const xMax = niceCeil(Math.max(100, ...steps.map(s => s.offeredRate)));
+  const yMax = niceCeil(Math.max(options.minY, ...steps.map(pick)));
+  const x = v => left + (v / xMax) * (W - left - right);
+  const y = v => H - bottom - (Math.min(v, yMax) / yMax) * (H - top - bottom);
+
+  for (let i = 0; i <= 4; i++) {
+    const yv = (yMax / 4) * i, xv = (xMax / 4) * i;
+    svg.append(el("line", { x1: left, x2: W - right, y1: y(yv), y2: y(yv), stroke: "#dfe5ea", "stroke-width": 1 }));
+    svg.append(el("text", { x: left - 8, y: y(yv) + 4, "text-anchor": "end", "font-size": 11, fill: "#5b6875" }, fmt(yv)));
+    svg.append(el("text", { x: x(xv), y: H - bottom + 18, "text-anchor": "middle", "font-size": 11, fill: "#5b6875" }, fmt(xv)));
+  }
+  svg.append(el("text", { x: (left + W - right) / 2, y: H - 6, "text-anchor": "middle", "font-size": 12, fill: "#5b6875" }, "buyers arriving per second"));
+  svg.append(el("text", { x: 14, y: (top + H - bottom) / 2, "text-anchor": "middle", "font-size": 12, fill: "#5b6875",
+    transform: "rotate(-90 14 " + (top + H - bottom) / 2 + ")" }, options.yLabel));
+
+  if (options.diagonal) {
+    const end = Math.min(xMax, yMax);
+    svg.append(el("line", { x1: x(0), y1: y(0), x2: x(end), y2: y(end), stroke: "#7a8794", "stroke-width": 1.5, "stroke-dasharray": "5 5" }));
+  }
+  if (options.budget && options.budget <= yMax) {
+    svg.append(el("line", { x1: left, x2: W - right, y1: y(options.budget), y2: y(options.budget), stroke: "#c0362c", "stroke-width": 1.5, "stroke-dasharray": "5 5" }));
+    svg.append(el("text", { x: W - right - 4, y: y(options.budget) - 6, "text-anchor": "end", "font-size": 11, fill: "#c0362c" }, "budget " + options.budget + " ms"));
+  }
+
+  runs.forEach(run => {
+    if (!run.steps.length) return;
+    const color = colorFor(run.group, run.label).c;
+    const points = run.steps.map(s => x(s.offeredRate) + "," + y(pick(s))).join(" ");
+    svg.append(el("polyline", { points, fill: "none", stroke: color, "stroke-width": 2.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    run.steps.forEach(s => {
+      const dot = el("circle", { cx: x(s.offeredRate), cy: y(pick(s)), r: s.fellOver ? 6 : 3.5,
+        fill: s.healthy ? color : "#ffffff", stroke: s.fellOver ? "#c0362c" : color, "stroke-width": 2 });
+      dot.append(el("title", {}, run.label + " at " + s.offeredRate + " buyers/s: " + fmt(pick(s), 1) + " " + options.unit +
+        (s.fellOver ? " (fell over)" : s.healthy ? "" : " (over budget)")));
+      svg.append(dot);
+    });
+  });
+}
+
+function drawLegend(runs) {
+  const holder = $("legend");
+  holder.replaceChildren();
+  runs.forEach(run => {
+    const item = document.createElement("span");
+    item.style.setProperty("--c", colorFor(run.group, run.label).c);
+    item.textContent = run.label;
+    holder.append(item);
+  });
+  if (runs.length) {
+    const key = document.createElement("span");
+    key.style.setProperty("--c", "transparent");
+    key.textContent = "● inside budget   ○ over budget   red ring = fell over";
+    holder.append(key);
+  }
+}
+
+function drawSteps(run) {
+  const body = $("steps");
+  if (!run || !run.steps.length) {
+    $("tableTitle").textContent = "Steps of the latest run";
+    body.innerHTML = '<tr><td colspan="11" class="empty">Nothing measured yet.</td></tr>';
+    return;
+  }
+  $("tableTitle").textContent = "Steps of " + run.id + " · " + run.label;
+  body.replaceChildren();
+  run.steps.forEach(s => {
+    const row = document.createElement("tr");
+    const verdict = verdictOf(s, run.budgetMillis);
+    [fmt(s.offeredRate), fmt(s.answeredPerSecond, 1), fmt(s.booked), fmt(s.soldOut), fmt(s.sessionLost), fmt(s.timeouts), fmt(s.errors),
+      fmt(s.shed), fmt(s.p50Millis, 1), fmt(s.p99Millis, 1)].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    });
+    const cell = document.createElement("td");
+    cell.className = "verdict " + verdict[0];
+    cell.textContent = verdict[1];
+    row.append(cell);
+    body.append(row);
+  });
+}
+
+async function refresh() {
+  let all;
+  try {
+    all = await (await fetch("/api/bench/runs")).json();
+  } catch (unreachable) {
+    notice("Cannot reach the bench. Is it still running?", true);
+    return;
+  }
+  const active = all.find(run => run.status === "RUNNING");
+  // Follow a run started from a script, unless the person has chosen a tab themselves.
+  if (active && !userPicked && active.group !== selectedGroup && groups.includes(active.group)) {
+    selectedGroup = active.group;
+    drawTabs();
+  }
+  document.querySelectorAll("button.preset").forEach(button => { button.disabled = Boolean(active); });
+  const inGroup = all.filter(run => run.group === selectedGroup);
+  const runs = latestPerLabel(inGroup);
+  const budget = runs.length ? runs[0].budgetMillis : 200;
+  drawScores(runs);
+  drawChart($("throughput"), runs, s => s.answeredPerSecond, { minY: 100, yLabel: "answers per second", unit: "answers/s", diagonal: true });
+  drawChart($("latency"), runs, s => s.p99Millis, { minY: budget * 2, yLabel: "p99 latency (ms)", unit: "ms", budget });
+  drawLegend(runs);
+  drawSteps(inGroup[inGroup.length - 1]);
+}
+
+$("clear").onclick = async () => {
+  await fetch("/api/bench/runs", { method: "DELETE" });
+  notice("Cleared finished runs.");
+  refresh();
+};
+
+loadPresets().then(refresh).catch(() => notice("Cannot reach the bench. Is it still running?", true));
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

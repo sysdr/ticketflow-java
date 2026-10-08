@@ -176,6 +176,7 @@
     <br>
     <input type="file" id="csvFiles" accept=".csv" multiple>
     <button class="btn" onclick="document.getElementById('csvFiles').click(); event.preventDefault()">Browse files</button>
+    <button class="btn" id="liveBtn" onclick="loadLive(); event.preventDefault()">Load live results</button>
     <button class="btn demo-btn" id="demoBtn" onclick="loadDemo(); event.preventDefault()">Load demo data</button>
   </label>
 </div>
@@ -368,8 +369,33 @@ function loadFiles(files) {
   document.getElementById('statusBar').textContent = '';
   Promise.all([rrFile.text(), lcFile.text()]).then(([rrText, lcText]) => {
     render(parseCsv(rrText), parseCsv(lcText));
+    document.getElementById('statusBar').textContent = 'Showing uploaded CSV results';
   });
 }
+
+// Fetch CSVs served by nginx from ./reports/
+async function loadLive() {
+  const status = document.getElementById('statusBar');
+  status.textContent = 'Loading /reports/rr-results.csv and /reports/lc-results.csv …';
+  try {
+    const [rrRes, lcRes] = await Promise.all([
+      fetch('/reports/rr-results.csv', { cache: 'no-store' }),
+      fetch('/reports/lc-results.csv', { cache: 'no-store' }),
+    ]);
+    if (!rrRes.ok || !lcRes.ok) {
+      throw new Error(`HTTP rr=${rrRes.status} lc=${lcRes.status}`);
+    }
+    const [rrText, lcText] = await Promise.all([rrRes.text(), lcRes.text()]);
+    render(parseCsv(rrText), parseCsv(lcText));
+    status.textContent = 'Showing live results from reports/';
+  } catch (err) {
+    status.textContent =
+      'Could not load live CSVs — run the load generator first, then click Load live results. (' + err.message + ')';
+  }
+}
+
+// Auto-load live results when available
+loadLive();
 
 // ── demo data generator ───────────────────────────────────────────────────────
 // Simulates realistic results showing LC advantage on slow path.

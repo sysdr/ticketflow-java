@@ -7,14 +7,16 @@ dist/
 *.war
 *.class
 
-# Logs / temp
+# Load-generator / local run output
+reports/
+*-results.csv
+.pids
+logs/
 *.log
 *.tmp
 *~
 *.swp
 *.swo
-.pids
-logs/
 
 # IDE / OS
 .idea/
@@ -34,3 +36,11 @@ Thumbs.db
 *.jks
 credentials*
 *secrets*
+id_rsa
+id_ed25519
+
+# Accidental empty dirs / local Maven cache
+lesson-06/
+.m2/
+.docker-config/
+.docker-config-cleanup/

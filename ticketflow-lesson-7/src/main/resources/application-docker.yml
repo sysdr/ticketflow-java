@@ -1,6 +1,0 @@
-# Active inside docker compose, where processes are reached by service name.
-topology:
-  small-1: http://box-small-1:8080
-  small-2: http://box-small-2:8080
-  big: http://box-big:8080
-  balancer: http://balancer:8080
